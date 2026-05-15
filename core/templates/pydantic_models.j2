@@ -1,0 +1,22 @@
+from pydantic import BaseModel
+from typing import Any, List, Optional, Dict
+
+{% for ep in entry_points %}
+class {{ ep.function_name.capitalize() }}Request(BaseModel):
+    {% for arg in ep.args %}
+    {% if arg != 'self' %}
+    {{ arg }}: {{ detected_types.get(arg, 'Any') }} {% if arg not in detected_types %}# TODO: refine type{% endif %}
+    {% endif %}
+    {% endfor %}
+{% endfor %}
+
+# Default fallback if no entry points were detected properly
+if not hasattr(locals(), 'PredictRequest'):
+    class PredictRequest(BaseModel):
+        data: Any # TODO: refine type
+
+class PredictResponse(BaseModel):
+    status: str
+    function: str
+    result: Any
+    metadata: Optional[Dict[str, Any]] = None

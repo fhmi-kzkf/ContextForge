@@ -1,0 +1,141 @@
+import os
+from datetime import datetime
+from jinja2 import Environment, FileSystemLoader
+from typing import Dict, Any
+
+class ContextForgeGenerator:
+    def __init__(self, analysis: dict, config: dict):
+        """
+        analysis: output from RepoAnalyzer.full_analysis()
+        config: user settings {model_type, api_prefix, include_tests, include_compose}
+        """
+        self.analysis = analysis
+        self.config = config
+        self.repo_name = analysis.get("repo_name", "Project")
+        self.framework = analysis.get("framework", "unknown")
+        
+        # Initialize Jinja2 environment
+        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        self.env = Environment(loader=FileSystemLoader(template_dir))
+
+    def _get_unique_entry_points(self):
+        """Deduplicate entry points by function name (BUG 3 FIX)."""
+        entry_points = self.analysis.get("entry_points", [])
+        seen = {}
+        unique_eps = []
+        for ep in entry_points:
+            name = ep["function_name"]
+            if name not in seen:
+                seen[name] = True
+                unique_eps.append(ep)
+        
+        if not unique_eps:
+            unique_eps = [{"function_name": "predict", "args": ["data"], "description": "Run inference"}]
+        return unique_eps
+
+    def generate_developer_guide(self, bob_summary: str = None) -> str:
+        """
+        Generate a full developer onboarding README using readme.j2 (BUG 4B & 7 FIX).
+        """
+        template = self.env.get_template('readme.j2')
+        
+        # BUG 7: Handle mock summary
+        if bob_summary and "Mock" not in bob_summary:
+            analysis_section = bob_summary
+        else:
+            analysis_section = """
+> **IBM Bob Analysis** — _Bob integration is active. Connect Bob to see
+> a deep contextual analysis of this repository here, including 
+> architecture insights, design decision rationale, and code quality notes._
+"""
+
+        # BUG 3: Format api_prefix for display
+        api_prefix = self.config.get("api_prefix", "/api/v1")
+        if not api_prefix: api_prefix = "/"
+
+        # BUG 4B: Use summary_graph
+        summary_graph = self.analysis.get("summary_graph", {})
+
+        context = {
+            "repo_name": self.repo_name,
+            "framework": self.framework,
+            "api_prefix": api_prefix,
+            "unique_entry_points": self._get_unique_entry_points(),
+            "analysis_summary": analysis_section,
+            "module_map": summary_graph,
+            "module_count": len(summary_graph),
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        return template.render(context)
+
+    def generate_fastapi_app(self) -> str:
+        """
+        Generate main.py for FastAPI (BUG 3 FIX).
+        """
+        template = self.env.get_template('fastapi_main.j2')
+        
+        unique_eps = self._get_unique_entry_points()
+        model_files = self.analysis.get("scan", {}).get("model_files", [])
+        model_file = model_files[0] if model_files else None
+            
+        context = {
+            "repo_name": self.repo_name,
+            "framework": self.framework,
+            "api_prefix": self.config.get("api_prefix", "/api/v1"),
+            "entry_points": unique_eps,
+            "model_file": model_file,
+            "multiple_eps": len(unique_eps) > 1
+        }
+        return template.render(context)
+
+    def generate_pydantic_models(self) -> str:
+        template = self.env.get_template('pydantic_models.j2')
+        context = {
+            "entry_points": self._get_unique_entry_points(),
+            "detected_types": {} 
+        }
+        return template.render(context)
+
+    def generate_dockerfile(self) -> str:
+        template = self.env.get_template('dockerfile.j2')
+        context = {
+            "python_version": "3.11",
+            "requirements": self.analysis.get("requirements", []) + ["fastapi", "uvicorn", "pydantic", "httpx", "pytest"],
+            "port": 8000
+        }
+        return template.render(context)
+
+    def generate_docker_compose(self) -> str:
+        template = self.env.get_template('docker_compose.j2')
+        model_files = self.analysis.get("scan", {}).get("model_files", [])
+        context = {
+            "service_name": f"{self.repo_name.lower()}-api",
+            "port": 8000,
+            "model_volume": len(model_files) > 0
+        }
+        return template.render(context)
+
+    def generate_unit_tests(self) -> str:
+        template = self.env.get_template('test_api.j2')
+        context = {
+            "entry_points": self._get_unique_entry_points(),
+            "api_prefix": self.config.get("api_prefix", "/api/v1")
+        }
+        return template.render(context)
+
+    def generate_all(self) -> dict:
+        files = {
+            'developer_guide': self.generate_developer_guide(),
+            'fastapi_main': self.generate_fastapi_app(),
+            'pydantic_models': self.generate_pydantic_models(),
+            'dockerfile': self.generate_dockerfile(),
+            'requirements': "\n".join(self.analysis.get("requirements", [])) + "\nfastapi\nuvicorn\npydantic\nhttpx\npytest"
+        }
+        
+        if self.config.get("include_compose"):
+            files['docker_compose'] = self.generate_docker_compose()
+            
+        if self.config.get("include_tests"):
+            files['unit_tests'] = self.generate_unit_tests()
+            
+        return files

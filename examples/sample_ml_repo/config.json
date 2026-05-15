@@ -1,0 +1,6 @@
+{
+  "model_path": "model/churn_model.pkl",
+  "threshold": 0.5,
+  "log_predictions": true,
+  "api_version": "v1"
+}
