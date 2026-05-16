@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  scikit-learn-api:
+    build: .
+    ports:
+      - "8000:8000"
+    
+    environment:
+      - ENV=production
+      - LOG_LEVEL=info
+    restart: always

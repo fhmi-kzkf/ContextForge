@@ -2,9 +2,12 @@ import streamlit as st
 import os
 import shutil
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
 from core.analyzer import RepoAnalyzer
 from core.generator import ContextForgeGenerator
-from core.bob_client import BobClient
+from core.ai_client import AIEngine
 from utils.repo_handler import extract_zip, clone_github_repo, read_all_python_files, create_output_zip, remove_readonly
 
 # --- CARBON DESIGN SYSTEM CSS ---
@@ -231,10 +234,10 @@ def main():
         st.session_state.status_msg = "Ready"
 
     # Top Nav
-    st.markdown('<div class="top-nav"><div class="nav-wordmark">ContextForge</div><div class="nav-powered">Powered by IBM Bob</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="top-nav"><div class="nav-wordmark">ContextForge</div><div class="nav-powered">AI-Powered Repository Understanding</div></div>', unsafe_allow_html=True)
 
     # Hero
-    st.markdown('<div class="hero-section"><div class="hero-headline">From repo to production.</div><div class="hero-subheadline">Understand any ML codebase and deploy it as an API — powered by IBM Bob.</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-section"><div class="hero-headline">From repo to production.</div><div class="hero-subheadline">Understand any ML codebase and deploy it as an API — forged with IBM Bob.</div></div>', unsafe_allow_html=True)
     
     hero_cols = st.columns([0.15, 0.15, 0.7])
     with hero_cols[0]:
@@ -278,11 +281,11 @@ def main():
                 analysis = analyzer.full_analysis()
                 analysis["repo_name"] = repo_name  # Ensure name is passed through
                 
-                # 2. Consult Bob
-                st.session_state.status_msg = "Consulting IBM Bob for deep insights..."
-                bob = BobClient()
-                py_files = read_all_python_files(temp_dir)
-                bob_summary = bob.analyze_repository(temp_dir, py_files)
+                # 2. Consult AI
+                st.session_state.status_msg = "Consulting ContextForge AI Engine..."
+                ai_engine = AIEngine()
+                py_files = read_all_python_files(actual_temp)
+                ai_summary = ai_engine.analyze_repository(actual_temp, py_files)
                 
                 # 3. Generate
                 st.session_state.status_msg = "Forging API and documentation..."
@@ -294,7 +297,7 @@ def main():
                 }
                 generator = ContextForgeGenerator(analysis, config)
                 generated = generator.generate_all()
-                generated['developer_guide'] = generator.generate_developer_guide(bob_summary)
+                generated['developer_guide'] = generator.generate_developer_guide(ai_summary)
                 
                 # Mock QA Report Data
                 analysis["qa_issues"] = [

@@ -1,6 +1,12 @@
 import os
 import ast
-from typing import List, Dict, Any
+import logging
+from typing import List, Dict, Any, Set
+from pathlib import Path
+
+# Configure logging for the analyzer
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class RepoAnalyzer:
     EXCLUDE_DIRS = {
@@ -11,24 +17,156 @@ class RepoAnalyzer:
     }
     
     ENTRY_POINT_NAMES = {
-        "predict", "inference", "run", "forward", "score", "classify", 
+        "predict", "inference", "run", "forward", "score", "classify",
         "detect", "generate", "infer", "batch_predict"
     }
 
     CLASS_KEYWORDS = {"model", "predictor", "classifier", "detector"}
+    
+    # Configuration constants for scan limits
+    MAX_FILE_SIZE = 200 * 1024  # 200KB
+    MAX_DEPTH = 10  # Maximum directory depth to prevent deep recursion
+    MAX_SYMLINK_DEPTH = 3  # Maximum symlink follow depth
 
     def __init__(self, repo_path: str):
         """Accept path to extracted repo folder."""
         self.repo_path = repo_path
         self.analysis_data = {}
         self._cached_scan = None
+        self._visited_paths: Set[str] = set()  # Track visited paths for symlink detection
+        self._scan_errors: List[Dict[str, str]] = []  # Track errors during scanning
+
+    def _is_safe_path(self, path: str, current_depth: int = 0) -> bool:
+        """
+        Check if a path is safe to traverse.
+        Handles symlinks, depth limits, and circular references.
+        
+        Args:
+            path: Path to check
+            current_depth: Current directory depth
+            
+        Returns:
+            bool: True if path is safe to traverse
+        """
+        try:
+            # Check depth limit
+            if current_depth > self.MAX_DEPTH:
+                logger.warning(f"Skipping deep nested path (depth {current_depth}): {path}")
+                self._scan_errors.append({
+                    "type": "depth_limit",
+                    "path": path,
+                    "message": f"Exceeded maximum depth of {self.MAX_DEPTH}"
+                })
+                return False
+            
+            # Resolve real path to detect symlinks
+            real_path = os.path.realpath(path)
+            
+            # Check if it's a symlink
+            if os.path.islink(path):
+                # Check if we've already visited this real path (circular reference)
+                if real_path in self._visited_paths:
+                    logger.warning(f"Skipping circular symlink: {path} -> {real_path}")
+                    self._scan_errors.append({
+                        "type": "circular_symlink",
+                        "path": path,
+                        "target": real_path,
+                        "message": "Circular symlink reference detected"
+                    })
+                    return False
+                
+                logger.debug(f"Following symlink: {path} -> {real_path}")
+            
+            # Mark this path as visited
+            self._visited_paths.add(real_path)
+            return True
+            
+        except (OSError, ValueError) as e:
+            logger.error(f"Error checking path safety for {path}: {e}")
+            self._scan_errors.append({
+                "type": "path_check_error",
+                "path": path,
+                "message": str(e)
+            })
+            return False
+
+    def _safe_get_file_size(self, file_path: str) -> int:
+        """
+        Safely get file size with error handling.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            int: File size in bytes, or -1 if error
+        """
+        try:
+            return os.path.getsize(file_path)
+        except (OSError, IOError) as e:
+            logger.warning(f"Cannot get size for {file_path}: {e}")
+            self._scan_errors.append({
+                "type": "file_size_error",
+                "path": file_path,
+                "message": str(e)
+            })
+            return -1
+
+    def _is_valid_file(self, file_path: str) -> bool:
+        """
+        Check if a file is valid and readable.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            bool: True if file is valid and readable
+        """
+        try:
+            # Check if file exists and is a regular file
+            if not os.path.isfile(file_path):
+                return False
+            
+            # Check if file is readable
+            if not os.access(file_path, os.R_OK):
+                logger.warning(f"File not readable: {file_path}")
+                self._scan_errors.append({
+                    "type": "permission_error",
+                    "path": file_path,
+                    "message": "File is not readable"
+                })
+                return False
+            
+            return True
+            
+        except (OSError, IOError) as e:
+            logger.error(f"Error validating file {file_path}: {e}")
+            self._scan_errors.append({
+                "type": "validation_error",
+                "path": file_path,
+                "message": str(e)
+            })
+            return False
 
     def scan_files(self) -> dict:
         """
-        Walk the repo directory tree with smart filtering (BUG 1 FIX).
+        Walk the repo directory tree with smart filtering and robust error handling.
+        
+        Improvements:
+        - Symlink detection and circular reference prevention
+        - Depth limiting to prevent deep recursion in test directories
+        - File corruption and permission error handling
+        - Comprehensive error logging
+        - Safe file size checking
+        
+        Returns:
+            dict: Scan results with file lists and metadata
         """
         if self._cached_scan:
             return self._cached_scan
+
+        # Reset tracking for new scan
+        self._visited_paths.clear()
+        self._scan_errors.clear()
 
         all_python_files = []
         notebook_files = []
@@ -39,28 +177,95 @@ class RepoAnalyzer:
         model_exts = {".pkl", ".pt", ".h5", ".onnx", ".joblib"}
         
         total_count = 0
-        for root, dirs, files in os.walk(self.repo_path):
-            rel_root = os.path.relpath(root, self.repo_path)
+        skipped_count = 0
+        
+        logger.info(f"Starting repository scan: {self.repo_path}")
+        
+        try:
+            # Validate repo path exists
+            if not os.path.exists(self.repo_path):
+                logger.error(f"Repository path does not exist: {self.repo_path}")
+                raise ValueError(f"Repository path does not exist: {self.repo_path}")
             
-            # Prune excluded directories from search
-            if any(part in self.EXCLUDE_DIRS for part in rel_root.split(os.sep)):
-                continue
+            for root, dirs, files in os.walk(self.repo_path, followlinks=False):
+                try:
+                    # Calculate current depth
+                    rel_root = os.path.relpath(root, self.repo_path)
+                    current_depth = 0 if rel_root == "." else rel_root.count(os.sep) + 1
+                    
+                    # Check if current directory is safe to traverse
+                    if not self._is_safe_path(root, current_depth):
+                        dirs[:] = []  # Don't descend into this directory
+                        skipped_count += 1
+                        continue
+                    
+                    # Prune excluded directories from search
+                    if any(part in self.EXCLUDE_DIRS for part in rel_root.split(os.sep)):
+                        dirs[:] = []  # Don't descend into excluded directories
+                        continue
+                    
+                    # Filter out excluded subdirectories before descending
+                    dirs[:] = [d for d in dirs if d not in self.EXCLUDE_DIRS]
 
-            for file in files:
-                total_count += 1
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, self.repo_path)
-                
-                if file.endswith(".py"):
-                    # File size guard (200KB)
-                    if os.path.getsize(full_path) < 200 * 1024:
-                        all_python_files.append(rel_path)
-                elif file.endswith(".ipynb"):
-                    notebook_files.append(rel_path)
-                elif file in config_names:
-                    config_files.append(rel_path)
-                elif any(file.endswith(ext) for ext in model_exts):
-                    model_files.append(rel_path)
+                    for file in files:
+                        total_count += 1
+                        full_path = os.path.join(root, file)
+                        
+                        # Validate file before processing
+                        if not self._is_valid_file(full_path):
+                            skipped_count += 1
+                            continue
+                        
+                        rel_path = os.path.relpath(full_path, self.repo_path)
+                        
+                        try:
+                            if file.endswith(".py"):
+                                # Safe file size check
+                                file_size = self._safe_get_file_size(full_path)
+                                if file_size == -1:
+                                    skipped_count += 1
+                                    continue
+                                
+                                # File size guard
+                                if file_size < self.MAX_FILE_SIZE:
+                                    all_python_files.append(rel_path)
+                                else:
+                                    logger.debug(f"Skipping large Python file ({file_size} bytes): {rel_path}")
+                                    skipped_count += 1
+                                    
+                            elif file.endswith(".ipynb"):
+                                notebook_files.append(rel_path)
+                            elif file in config_names:
+                                config_files.append(rel_path)
+                            elif any(file.endswith(ext) for ext in model_exts):
+                                model_files.append(rel_path)
+                                
+                        except Exception as e:
+                            logger.error(f"Error processing file {rel_path}: {e}")
+                            self._scan_errors.append({
+                                "type": "file_processing_error",
+                                "path": rel_path,
+                                "message": str(e)
+                            })
+                            skipped_count += 1
+                            continue
+                            
+                except Exception as e:
+                    logger.error(f"Error processing directory {root}: {e}")
+                    self._scan_errors.append({
+                        "type": "directory_error",
+                        "path": root,
+                        "message": str(e)
+                    })
+                    continue
+
+        except Exception as e:
+            logger.error(f"Critical error during repository scan: {e}")
+            self._scan_errors.append({
+                "type": "critical_scan_error",
+                "path": self.repo_path,
+                "message": str(e)
+            })
 
         # Smart Filtering Strategy
         filtered_python = []
@@ -84,29 +289,79 @@ class RepoAnalyzer:
 
         # Final cap
         filtered_python = filtered_python[:50]
+        
+        logger.info(f"Scan complete: {len(all_python_files)} Python files found, "
+                   f"{len(filtered_python)} selected for analysis, "
+                   f"{skipped_count} files skipped, "
+                   f"{len(self._scan_errors)} errors encountered")
 
         results = {
-            "all_python_files": all_python_files, # For background analysis if needed
+            "all_python_files": all_python_files,
             "python_files": filtered_python,
             "notebook_files": notebook_files,
             "config_files": config_files,
             "model_files": model_files,
             "file_count_total": total_count,
             "file_count_analyzed": len(filtered_python),
-            "scan_strategy": strategy
+            "file_count_skipped": skipped_count,
+            "scan_strategy": strategy,
+            "scan_errors": self._scan_errors.copy(),  # Include errors in results
+            "error_count": len(self._scan_errors)
         }
         self._cached_scan = results
         return results
 
     def parse_python_file(self, file_path: str) -> dict:
         """
-        Use Python's ast module to parse a .py file.
+        Use Python's ast module to parse a .py file with robust error handling.
+        
+        Args:
+            file_path: Relative path to Python file from repo root
+            
+        Returns:
+            dict: Parsed file structure with imports, functions, classes, and variables
         """
+        full_path = os.path.join(self.repo_path, file_path)
+        
         try:
-            with open(os.path.join(self.repo_path, file_path), "r", encoding="utf-8") as f:
-                tree = ast.parse(f.read())
-        except Exception:
-            return {"imports": [], "functions": [], "classes": [], "global_vars": []}
+            # Check if file is readable
+            if not os.access(full_path, os.R_OK):
+                logger.warning(f"Cannot read file (permission denied): {file_path}")
+                return {"imports": [], "functions": [], "classes": [], "global_vars": [], "parse_error": "permission_denied"}
+            
+            # Try to read and parse the file
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                
+            # Check for empty or very small files
+            if len(content.strip()) == 0:
+                logger.debug(f"Skipping empty file: {file_path}")
+                return {"imports": [], "functions": [], "classes": [], "global_vars": [], "parse_error": "empty_file"}
+            
+            tree = ast.parse(content, filename=file_path)
+            
+        except UnicodeDecodeError as e:
+            logger.warning(f"Unicode decode error in {file_path}: {e}")
+            # Try with different encoding
+            try:
+                with open(full_path, "r", encoding="latin-1") as f:
+                    content = f.read()
+                tree = ast.parse(content, filename=file_path)
+            except Exception as e2:
+                logger.error(f"Failed to parse {file_path} with alternate encoding: {e2}")
+                return {"imports": [], "functions": [], "classes": [], "global_vars": [], "parse_error": "encoding_error"}
+                
+        except SyntaxError as e:
+            logger.warning(f"Syntax error in {file_path}: {e}")
+            return {"imports": [], "functions": [], "classes": [], "global_vars": [], "parse_error": "syntax_error"}
+            
+        except OSError as e:
+            logger.error(f"OS error reading {file_path}: {e}")
+            return {"imports": [], "functions": [], "classes": [], "global_vars": [], "parse_error": "os_error"}
+            
+        except Exception as e:
+            logger.error(f"Unexpected error parsing {file_path}: {e}")
+            return {"imports": [], "functions": [], "classes": [], "global_vars": [], "parse_error": "unknown_error"}
 
         imports = []
         functions = []
