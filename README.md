@@ -1,79 +1,73 @@
-# ⚒️ ContextForge
+# ⚒️ ContextForge: From Repo to Production
 
-**ContextForge** is a production-grade developer productivity engine designed to bridge the gap between complex ML repositories and deployment-ready APIs. It analyzes existing Python codebases using static analysis (AST) and AI-driven insights to generate high-quality developer documentation and a complete FastAPI wrapper.
+**ContextForge** is a production-grade developer productivity engine designed to bridge the gap between messy ML repositories and deployment-ready APIs. It automates the "last mile" of machine learning engineering by providing deep code understanding and instant infrastructure generation.
+
+> [!IMPORTANT]
+> **Forged with IBM Bob**: This project was developed using **IBM Bob IDE** as the primary AI-powered development partner. Bob's contextual awareness and reasoning were instrumental in building the complex AST analysis engine and enforcing the strict IBM Carbon Design System.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-- **Automated Repository Analysis**: Identifies ML frameworks (sklearn, pytorch, tensorflow), entry points, and internal dependency maps.
-- **AI-Powered Developer Guide**: Generates an interactive onboarding guide covering architecture, module flow, and design decisions using **IBM Bob**.
-- **FastAPI Scaffolding**: Produces production-ready `main.py` with lifespan model loading, Pydantic request/response models, and health checks.
-- **Containerization Ready**: Generates `Dockerfile` and `docker-compose.yml` optimized for the detected framework.
-- **Carbon Design UI**: A sleek, professional frontend built with **Streamlit** following the **IBM Carbon Design System**.
+- **Intelligent Code Mapping**: Uses Python's Abstract Syntax Tree (AST) to map dependencies and detect model entry points automatically.
+- **AI-Powered Repository Insights**: Leverages advanced LLMs (via Gemini or watsonx.ai) to generate interactive developer onboarding guides.
+- **FastAPI Scaffolding**: Instant generation of production-ready `main.py`, Pydantic models, and lifespan handlers.
+- **Infrastructure-as-Code**: Automatically generates `Dockerfile` and `docker-compose.yml` optimized for ML workloads.
+- **IBM Carbon UI**: A sleek, professional dashboard built with **Streamlit** following mandatory Carbon Design rules.
 
 ## 🛠️ Project Structure
 
-```bash
+```text
 ContextForge/
-├── app.py              # Streamlit frontend entry point
+├── app.py              # Streamlit dashboard entry point
 ├── core/
-│   ├── analyzer.py     # AST-based repository analysis engine
+│   ├── analyzer.py     # AST-based static analysis engine
 │   ├── generator.py    # Jinja2 template orchestration
-│   ├── bob_client.py   # IBM Bob SDK integration & fallback logic
-│   └── templates/      # Jinja2 templates for FastAPI, Docker, etc.
+│   └── ai_client.py    # AI Engine integration (Gemini/watsonx)
 ├── utils/
-│   ├── repo_handler.py # Filesystem and Git operations
-│   └── ast_parser.py   # AST parsing utilities
+│   ├── repo_handler.py # Repository extraction and cleanup
+│   └── ...
+├── bob_sessions/       # MANDATORY: IBM Bob interaction artifacts
 ├── requirements.txt    # Project dependencies
-└── README.md           # You are here
+└── .env                # Environment configuration
 ```
 
-## 📦 Installation
+## 📦 Getting Started
 
-1. **Clone the repository:**
+1. **Clone & Setup:**
    ```bash
-   git clone https://github.com/your-repo/contextforge.git
-   cd contextforge
-   ```
-
-2. **Set up virtual environment:**
-   ```bash
+   git clone https://github.com/your-username/ContextForge.git
+   cd ContextForge
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
+   source venv/bin/activate  # Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
-4. **Set up IBM Bob API Key:**
-   Export your API key as an environment variable:
+2. **Configure Environment:**
+   Copy `.env.example` to `.env` and add your API Key:
    ```bash
-   export IBM_BOB_API_KEY="your_api_key_here"
+   cp .env.example .env
+   # Open .env and add your GEMINI_API_KEY
    ```
 
-## 🚀 Usage
+3. **Launch Dashboard:**
+   ```bash
+   streamlit run app.py
+   ```
 
-Run the Streamlit application:
-```bash
-streamlit run app.py
-```
+## 🤖 The "Bob Factor" (Hackathon Submission)
 
-1. **Upload** a `.zip` repository or provide a **GitHub URL**.
-2. **Configure** API prefix and optional components (Tests, Docker Compose).
-3. **Analyze**: Let ContextForge map the dependencies and consult Bob for architecture insights.
-4. **Download**: Get your generated Developer Guide and API Package as a ZIP.
+This project strictly adheres to the IBM Bob Hackathon requirements. All core logic was written and refactored in collaboration with **IBM Bob IDE**. 
 
-## 🧰 Tech Stack
+Evidence of this collaboration (exported task histories and consumption reports) can be found in the [bob_sessions/](bob_sessions/) directory.
 
-- **Frontend**: Streamlit
-- **Logic**: Python 3.10+
-- **Analysis**: Python AST, GitPython
-- **AI Intelligence**: IBM Bob SDK
-- **Templating**: Jinja2
-- **UI System**: IBM Carbon Design System
+## 🧰 Technology Stack
+
+- **Frontend**: Streamlit (Python)
+- **UI Design**: IBM Carbon Design System
+- **Core Engine**: Python AST & Jinja2
+- **AI Intelligence**: Google Gemini (via `google-generativeai`)
+- **Development Partner**: IBM Bob IDE
 
 ---
-
+*Developed for the IBM Bob Hackathon 2026.*

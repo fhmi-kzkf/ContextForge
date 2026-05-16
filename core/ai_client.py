@@ -11,8 +11,10 @@ class AIEngine:
     
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            logging.warning("GEMINI_API_KEY not found. Running in Mock mode.")
+        
+        # Check if key is missing OR still using the placeholder from .env.example
+        if not self.api_key or "your_gemini_api_key_here" in self.api_key:
+            logging.warning("GEMINI_API_KEY not found or invalid. Running in Mock mode.")
             self.use_mock = True
         else:
             try:
@@ -23,9 +25,13 @@ class AIEngine:
                 logging.error(f"Failed to initialize Gemini: {e}")
                 self.use_mock = True
 
+    @property
+    def is_mock(self) -> bool:
+        return self.use_mock
+
     def analyze_repository(self, repo_path: str, file_contents: dict) -> str:
         """
-        Analyzes repository context using Gemini.
+        Analyzes repository context using Gemini with a high-detail prompt.
         """
         if self.use_mock:
             return self._mock_analyze(file_contents)
@@ -35,21 +41,26 @@ class AIEngine:
             files_str = "\n\n".join([f"--- FILE: {name} ---\n{content}" for name, content in file_contents.items()])
             
             prompt = (
+                f"You are an expert Senior Machine Learning Engineer and Architect. "
                 f"Analyze this Python ML repository: {repo_path}\n\n"
-                f"File contents:\n{files_str}\n\n"
-                "Provide a detailed analysis covering:\n"
-                "1. Architecture overview\n"
-                "2. Logic flow from raw data to prediction\n"
-                "3. Suggested FastAPI wrapper structure\n"
-                "4. Critical improvements for production readiness.\n"
-                "Keep the response professional and technical."
+                f"Files and Code contents:\n{files_str}\n\n"
+                "Task: Provide a deep technical analysis of this codebase for the ContextForge Developer Guide. "
+                "The analysis MUST be comprehensive and include:\n"
+                "1. **Architecture & Logic Flow**: Explain how the model is loaded and how data is transformed from input to output. "
+                "Mention specific class names and function names found in the code.\n"
+                "2. **Internal Dependencies**: Explain the relationship between modules (e.g., how the main app utilizes feature extractors).\n"
+                "3. **Production Recommendations**: Identify technical debt, missing error handling, and performance bottlenecks. "
+                "Suggest specific Pydantic models for the FastAPI request body.\n"
+                "4. **Infrastructure Needs**: What specific environment configurations are needed for this model?\n\n"
+                "FORMAT: Use Markdown with professional headings. Do NOT use placeholders. Be specific to the code provided."
             )
             
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
             logging.error(f"Gemini analysis error: {e}")
-            return self._mock_analyze(file_contents)
+            # Return a clearer error message instead of generic mock
+            return f"### ⚠️ AI Analysis Interrupted\n\nGemini was active but encountered an error: `{str(e)}`. \n\nPlease check your internet connection or API quota. Falling back to basic simulation below:\n\n" + self._mock_analyze(file_contents)
 
     def generate_documentation(self, analysis_text: str) -> str:
         """

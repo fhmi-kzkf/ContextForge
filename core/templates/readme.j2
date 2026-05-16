@@ -69,11 +69,26 @@ All endpoints are prefixed with `{{ api_prefix }}`.
 {% endfor %}
 | `{{ api_prefix }}{{ "/" if api_prefix != "/" else "" }}health` | GET | Health check — returns model status and version |
 
+## ⚙️ Environment Setup
+The generated API package includes a `.env` loader. Ensure the following environment variables are configured if needed by your model:
+- `DEBUG`: Set to `True` for development.
+- `PORT`: Default is `8000`.
+
+## 🧪 Testing Strategy
+A test suite has been generated in `test_api.py`. You can run tests using:
+```bash
+pytest test_api.py
+```
+
 ## 🧠 Design Decisions & FAQ
 - **Why FastAPI?** High performance, automatic OpenAPI documentation, and easy type validation.
 - **Model Loading:** Models are loaded once at startup via the `lifespan` context manager to minimize request latency.
-- **Validation:** Pydantic models are generated to validate incoming data formats.
+- **Validation:** Pydantic models are generated based on AST inference to validate incoming data formats.
+- **Production Ready:** Includes logging configurations and error handlers by default.
 
 ---
-### 🔍 Analysis Summary
+### 🤖 AI Technical Insights
 {{ analysis_summary }}
+
+---
+*Forged with IBM Bob & ContextForge*

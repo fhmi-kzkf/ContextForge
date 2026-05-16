@@ -233,8 +233,12 @@ def main():
     if 'status_msg' not in st.session_state:
         st.session_state.status_msg = "Ready"
 
+    # Check AI Status
+    ai_engine = AIEngine()
+    ai_status = '<span class="badge badge-success">ACTIVE (GEMINI)</span>' if not ai_engine.is_mock else '<span class="badge badge-warning">SIMULATED (MOCK)</span>'
+
     # Top Nav
-    st.markdown('<div class="top-nav"><div class="nav-wordmark">ContextForge</div><div class="nav-powered">AI-Powered Repository Understanding</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="top-nav"><div class="nav-wordmark">ContextForge</div><div class="nav-powered">AI Engine: {ai_status}</div></div>', unsafe_allow_html=True)
 
     # Hero
     st.markdown('<div class="hero-section"><div class="hero-headline">From repo to production.</div><div class="hero-subheadline">Understand any ML codebase and deploy it as an API — forged with IBM Bob.</div></div>', unsafe_allow_html=True)
