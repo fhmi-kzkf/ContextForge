@@ -12,6 +12,5 @@ scikit-learn>=1.4.0
 numpy>=1.26.0
 pandas>=2.2.0
 joblib>=1.4.0
-ibm-bob-sdk  # Added to support real Bob integration
 google-generativeai
 python-dotenv
